@@ -78,7 +78,11 @@ class Yes24(Metadata):
             isbn13 = soup.find('th', text='ISBN13').find_next_sibling('td').text.strip()
 
             description_element = soup.find('div', class_='infoWrap_txtInner')
-            description_text = description_element.get_text("\n", strip=True)
+            
+            if description_element:
+                description_text = description_element.get_text("\n", strip=True)
+            else:
+                description_text = ""
             
             match = MetaRecord(
                 id = None,
