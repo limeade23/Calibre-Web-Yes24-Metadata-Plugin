@@ -76,6 +76,14 @@ class Yes24(Metadata):
             publisher = soup.find('span', class_='gd_pub').text.strip()
             pub_date = soup.find('span', class_='gd_date').text.strip()
             isbn13 = soup.find('th', text='ISBN13').find_next_sibling('td').text.strip()
+            rating_element = soup.find('span', class_='gd_rating')
+            if rating_element:
+                rating_text = rating_element.find('em').text.strip()
+                rating = float(rating_text) if rating_text else None
+                if rating is not None:
+                    rating = max(0, min(5, round(rating / 2)))  # Convert rating from 0-10 to 0-5 range and round to the nearest integer
+            else:
+                rating = None
 
             description_element = soup.find('div', class_='infoWrap_txtInner')
             
@@ -98,6 +106,7 @@ class Yes24(Metadata):
                 description = description_text,
                 publisher = publisher,
                 publishedDate = datetime.strptime(pub_date, "%Y년 %m월 %d일").strftime("%Y-%m-%d"),
+                rating = rating,
                 # tags = []
                 identifiers = {
                     "isbn": isbn13,
