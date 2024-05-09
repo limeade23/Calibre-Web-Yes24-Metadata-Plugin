@@ -5,7 +5,8 @@
 ## 설치 방법
 1. `./cps/metadata_provider/` 디렉토리에 `yes24.py` 파일을 업로드 한다.
 
-2. docker-compose를 사용한다면 다음과 같이 `yes24.py` 파일을 매핑해준다.
+2. docker를 사용한다면 `metadata_provider` 디렉토리를 매핑하거나 `yes24.py` 파일을 매핑해주는 방식 등을 이용한다.
+    linuxserver의 이미지를 이용한다면 다음과 같이 추가할 수 있다.
     ```docker-compose
         - ./yes24.py:/app/calibre-web/cps/metadata_provider/yes24.py
     ```
