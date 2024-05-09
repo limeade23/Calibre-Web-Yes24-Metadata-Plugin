@@ -14,7 +14,6 @@ from cps import logger
 from cps.services.Metadata import MetaRecord, MetaSourceInfo, Metadata
 import cps.logger as logger
 
-#from time import time
 from operator import itemgetter
 log = logger.create()
 
@@ -25,9 +24,6 @@ class Yes24(Metadata):
     
     BASE_URL = f"https://www.yes24.com/Product"
     
-    # session = requests.Session()
-    # session.headers=headers
-
     def search(
         self, query: str, generic_cover: str = "", locale: str = "ko"
     ) -> Optional[List[MetaRecord]]:
@@ -78,10 +74,7 @@ class Yes24(Metadata):
             authors = [a.text.strip() for a in authors_element.find_all('a')]
             
             publisher = soup.find('span', class_='gd_pub').text.strip()
-            
             pub_date = soup.find('span', class_='gd_date').text.strip()
-            # pub_date = pub_date.replace('-', '년 ', 1).replace('-', '월 ', 1) + '일'  # '-' 문자를 '년', '월'로 변경
-
             isbn13 = soup.find('th', text='ISBN13').find_next_sibling('td').text.strip()
 
             description_element = soup.find('div', class_='infoWrap_txtInner')
@@ -101,7 +94,7 @@ class Yes24(Metadata):
                 description = description_text,
                 publisher = publisher,
                 publishedDate = datetime.strptime(pub_date, "%Y년 %m월 %d일").strftime("%Y-%m-%d"),
-                # tags = ["Yes24", goods_no]
+                # tags = []
                 identifiers = {
                     "isbn": isbn13,
                     "Yes24": goods_no
