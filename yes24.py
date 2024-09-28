@@ -127,8 +127,8 @@ class Yes24(Metadata):
                 identifiers = {
                     "isbn": isbn13,
                     "Yes24": goods_no
-                    }
-                languages = "한국어"
+                    },
+                languages = ["한국어"]
             )
 
             return match
