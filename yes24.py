@@ -20,7 +20,7 @@ log = logger.create()
 
 class Yes24(Metadata):
     __name__ = "Yes24"
-    __id__ = "yes24"
+    __id__ = "Yes24"
     
     BASE_URL = f"https://www.yes24.com/Product"
     
@@ -37,7 +37,7 @@ class Yes24(Metadata):
                     "domain": "ALL",
                     "query": query,
                     "page": 1,
-                    "size": 5
+                    "size": 8
                 }
                 
                 search_url = f"{self.BASE_URL}/Search"
@@ -69,13 +69,23 @@ class Yes24(Metadata):
 
             soup = BS(response.text, 'html.parser')
             
+            # title
             title = soup.find('h2', class_='gd_name').text.strip()
+            
+            # authors
             authors_element = soup.find('span', class_='gd_auth')
             authors = [a.text.strip() for a in authors_element.find_all('a')]
             
+            # publisher
             publisher = soup.find('span', class_='gd_pub').text.strip()
+            
+            # publishedDate
             pub_date = soup.find('span', class_='gd_date').text.strip()
+            
+            # isbn
             isbn13 = soup.find('th', text='ISBN13').find_next_sibling('td').text.strip()
+            
+            # rating
             rating_element = soup.find('span', class_='gd_rating')
             if rating_element:
                 rating_text = rating_element.find('em').text.strip()
@@ -85,12 +95,18 @@ class Yes24(Metadata):
             else:
                 rating = None
 
+            # description
             description_element = soup.find('div', class_='infoWrap_txtInner')
-            
+                        
             if description_element:
                 description_text = description_element.get_text("\n", strip=True)
             else:
                 description_text = ""
+                
+            # tags
+            infoset_goodsCate = soup.find('div', id='infoset_goodsCate')
+            tags_element = infoset_goodsCate.find('ul', class_='yesAlertLi').find('li')
+            tags = [a.text.strip() for a in tags_element.find_all('a')]
             
             match = MetaRecord(
                 id = None,
@@ -107,11 +123,12 @@ class Yes24(Metadata):
                 publisher = publisher,
                 publishedDate = datetime.strptime(pub_date, "%Y년 %m월 %d일").strftime("%Y-%m-%d"),
                 rating = rating,
-                # tags = []
+                tags = tags,
                 identifiers = {
                     "isbn": isbn13,
                     "Yes24": goods_no
                     }
+                languages = "한국어"
             )
 
             return match
