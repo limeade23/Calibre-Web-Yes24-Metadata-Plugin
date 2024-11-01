@@ -2,7 +2,6 @@
 
 캘리버 웹 Yes24 메타데이터 소스 플러그인
 
-<img width="500" alt="image" src="https://github.com/user-attachments/assets/1fda9830-c1cb-412b-9d60-9e9101d4d7b9">
 <img width="500" alt="image" src="https://github.com/user-attachments/assets/a129ffd6-2391-43f2-b7ae-5ba1df134577">
 
 
