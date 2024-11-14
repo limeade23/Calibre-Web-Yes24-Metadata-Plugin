@@ -74,8 +74,17 @@ class Yes24(Metadata):
             
             # authors
             authors_element = soup.find('span', class_='gd_auth')
-            authors = [a.text.strip() for a in authors_element.find_all('a')]
-            
+            if authors_element:
+               # 더보기 영역 유무 체크
+               more_auth_li = authors_element.find('span', class_='moreAuthLi')
+               
+               if more_auth_li:
+                   # 더보기 영역
+                   authors = [a.text.strip() for a in more_auth_li.find_all('a')]
+               else:
+                   # 기본 영역
+                   authors = [a.text.strip() for a in authors_element.find_all('a', recursive=False)]
+                        
             # publisher
             publisher = soup.find('span', class_='gd_pub').text.strip()
             
