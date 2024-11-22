@@ -69,54 +69,54 @@ class Yes24(Metadata):
 
             soup = BS(response.text, 'html.parser')
             
-            # title
-            title = soup.find('h2', class_='gd_name').text.strip()
-            
-            # authors
+
+            title_element = soup.find('h2', class_='gd_name')
+            title = title_element.text.strip() if title_element else ''
+
+            authors = []
             authors_element = soup.find('span', class_='gd_auth')
             if authors_element:
-               # 더보기 영역 유무 체크
-               more_auth_li = authors_element.find('span', class_='moreAuthLi')
-               
-               if more_auth_li:
-                   # 더보기 영역
-                   authors = [a.text.strip() for a in more_auth_li.find_all('a')]
-               else:
-                   # 기본 영역
-                   authors = [a.text.strip() for a in authors_element.find_all('a', recursive=False)]
-                        
-            # publisher
-            publisher = soup.find('span', class_='gd_pub').text.strip()
-            
-            # publishedDate
-            pub_date = soup.find('span', class_='gd_date').text.strip()
-            
-            # isbn
-            isbn13 = soup.find('th', text='ISBN13').find_next_sibling('td').text.strip()
-            
+                more_auth_li = authors_element.find('span', class_='moreAuthLi')
+                authors = [a.text.strip() for a in (more_auth_li.find_all('a') if more_auth_li 
+                        else authors_element.find_all('a', recursive=False))]
+
+            publisher_element = soup.find('span', class_='gd_pub')
+            publisher = publisher_element.text.strip() if publisher_element else ''
+
+            pub_date_element = soup.find('span', class_='gd_date')
+            pub_date = pub_date_element.text.strip() if pub_date_element else ''
+            try:
+                if pub_date:
+                    pub_date = datetime.strptime(pub_date, "%Y년 %m월 %d일").strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+            isbn13_element = soup.find('th', text='ISBN13')
+            isbn13 = isbn13_element.find_next_sibling('td').text.strip() if isbn13_element else ''
+
+            description_element = soup.find('div', class_='infoWrap_txtInner')
+            description = description_element.get_text("\n", strip=True) if description_element else ''
+
             # rating
             rating_element = soup.find('span', class_='gd_rating')
-            if rating_element:
+            rating = None
+            if rating_element and rating_element.find('em'):
                 rating_text = rating_element.find('em').text.strip()
-                rating = float(rating_text) if rating_text else None
-                if rating is not None:
-                    rating = max(0, min(5, round(rating / 2)))  # Convert rating from 0-10 to 0-5 range and round to the nearest integer
-            else:
-                rating = None
+                try:
+                    if rating_text:
+                        rating = float(rating_text)
+                        rating = max(0, min(5, round(rating / 2)))
+                except ValueError:
+                    pass
 
-            # description
-            description_element = soup.find('div', class_='infoWrap_txtInner')
-                        
-            if description_element:
-                description_text = description_element.get_text("\n", strip=True)
-            else:
-                description_text = ""
-                
             # tags
+            tags = []
             infoset_goodsCate = soup.find('div', id='infoset_goodsCate')
-            tags_element = infoset_goodsCate.find('ul', class_='yesAlertLi').find('li')
-            tags = [a.text.strip() for a in tags_element.find_all('a')]
-            
+            if infoset_goodsCate:
+                tags_element = infoset_goodsCate.find('ul', class_='yesAlertLi')
+                if tags_element and tags_element.find('li'):
+                    tags = [a.text.strip() for a in tags_element.find('li').find_all('a')]
+
             match = MetaRecord(
                 id = None,
                 title = title,
@@ -128,9 +128,9 @@ class Yes24(Metadata):
                 ),
                 url = url,
                 cover = f"https://image.yes24.com/goods/{goods_no}/XL",
-                description = description_text,
+                description = description,
                 publisher = publisher,
-                publishedDate = datetime.strptime(pub_date, "%Y년 %m월 %d일").strftime("%Y-%m-%d"),
+                publishedDate = pub_date,
                 rating = rating,
                 tags = tags,
                 identifiers = {
