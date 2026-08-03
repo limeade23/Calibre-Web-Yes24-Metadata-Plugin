@@ -97,8 +97,12 @@ class Yes24(Metadata):
             except ValueError:
                 pass
 
-            isbn13_element = soup.find('th', text='ISBN13')
-            isbn13 = isbn13_element.find_next_sibling('td').text.strip() if isbn13_element else ''
+            isbn13 = ''
+            isbn13_element = soup.find('th', string='ISBN13')
+            if isbn13_element:
+                isbn13_value = isbn13_element.find_next_sibling('td')
+                if isbn13_value:
+                    isbn13 = isbn13_value.text.strip()
 
             description_element = soup.find('div', class_='infoWrap_txtInner')
             description = description_element.get_text("\n", strip=True) if description_element else ''
@@ -123,6 +127,10 @@ class Yes24(Metadata):
                 if tags_element and tags_element.find('li'):
                     tags = [a.text.strip() for a in tags_element.find('li').find_all('a')]
 
+            identifiers = {"Yes24": goods_no}
+            if isbn13:
+                identifiers["isbn"] = isbn13
+
             match = MetaRecord(
                 id = None,
                 title = title,
@@ -139,10 +147,7 @@ class Yes24(Metadata):
                 publishedDate = pub_date,
                 rating = rating,
                 tags = tags,
-                identifiers = {
-                    "isbn": isbn13,
-                    "Yes24": goods_no
-                    },
+                identifiers = identifiers,
                 languages = ["한국어"]
             )
 
