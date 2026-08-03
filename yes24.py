@@ -4,7 +4,6 @@ import concurrent.futures
 import re
 import threading
 from datetime import datetime
-from operator import itemgetter
 from typing import List, Optional
 
 import requests
@@ -40,9 +39,12 @@ def _session() -> requests.Session:
 # --- lxml 헬퍼 ---------------------------------------------------------------
 
 def _cls(tag: str, name: str) -> str:
-    """class 로 요소를 찾는 XPath.
+    """class 에 name 이 들어있는 요소를 찾는 XPath 를 만든다.
 
-    cssselect 는 calibre-web 의 의존성이 아니므로 XPath 만 사용한다.
+    class="gd_name foo" 에서 gd_name 만 정확히 고르려면 앞뒤에 공백을 붙여
+    비교해야 한다. contains(@class, "gd_name") 만으로는 "gd_name_sub" 같은
+    다른 클래스에도 걸린다.
+    cssselect 를 쓰면 간단하지만 calibre-web 의 의존성이 아니라 XPath 만 쓴다.
     """
     return f'.//{tag}[contains(concat(" ", normalize-space(@class), " "), " {name} ")]'
 
@@ -59,8 +61,9 @@ def _text(node, xpath) -> str:
 
 def _inner_html(element) -> str:
     """자식의 마크업을 유지한 채 내부 HTML 을 문자열로 만든다."""
-    return ((element.text or '') + ''.join(
-        lxml.html.tostring(child, encoding='unicode') for child in element)).strip()
+    children = ''.join(
+        lxml.html.tostring(child, encoding='unicode') for child in element)
+    return ((element.text or '') + children).strip()
 
 
 _CLOSE_BR = re.compile(r'(&lt;|<)\s*/\s*br\s*/?\s*(&gt;|>)', re.IGNORECASE)
@@ -73,17 +76,22 @@ def _fix_close_br(html: str) -> str:
     그냥 버린다. Yes24 설명에 이 표기가 흔해서 그대로 두면 줄바꿈이 사라진다.
     설명은 상품에 따라 이스케이프된 채로도, 날 것으로도 들어있어 둘 다 처리한다.
     """
-    return _CLOSE_BR.sub(
-        lambda m: '&lt;br&gt;' if m.group(1) == '&lt;' else '<br>', html)
+    def to_open_tag(match):
+        was_escaped = match.group(1) == '&lt;'
+        return '&lt;br&gt;' if was_escaped else '<br>'
+
+    return _CLOSE_BR.sub(to_open_tag, html)
 
 
 # --- 저자 -------------------------------------------------------------------
 
-# 긴 표기를 먼저 둬야 '공저' 가 '저' 로 잘리지 않는다
+# 정규식 교대는 왼쪽부터 먼저 맞춰보므로, 어떤 표기가 다른 표기의 앞부분이면
+# 반드시 긴 쪽을 왼쪽에 둬야 한다. '공저' 가 '저' 보다 뒤에 있으면 '저' 로 잘린다.
+# 표기를 추가할 때도 이 규칙을 지켜야 한다 ('역주' 는 '역' 보다 앞에).
 _ROLE = (r'(?:원저|편저|공저|등저|저자|지음|저|글|그림|사진|편역|번역|옮김|역자|역'
          r'|엮음|편|감수|해설|주해|각색|기획|원작|구성)')
-_ROLE_IN_TAIL = re.compile(_ROLE)
-_ROLE_SUFFIX = re.compile(r'\s+' + _ROLE + r'\s*$')
+_ROLE_IN_TAIL = re.compile(_ROLE)          # 이름 뒤 tail 텍스트에서 역할 찾기
+_ROLE_SUFFIX = re.compile(r'\s+' + _ROLE + r'\s*$')   # 이름 끝에 붙은 역할 떼기
 
 # 글쓴 사람으로 볼 역할. 아무도 빼지 않고 이 사람들을 앞으로 보내기만 한다.
 # calibre-web 은 authors 를 ' & ' 로 이어 붙인 뒤 첫 번째 사람으로 책 폴더를
@@ -93,6 +101,11 @@ _ROLE_SUFFIX = re.compile(r'\s+' + _ROLE + r'\s*$')
 # 매길 근거가 없어서, 굳이 뒤섞으면 바뀌지 않아도 될 순서까지 바뀐다.
 _AUTHOR_ROLES = frozenset((
     '저', '저자', '지음', '글', '공저', '등저', '원저', '편저', '엮음', '원작', '구성'))
+
+
+def _is_author(role: str) -> bool:
+    """글쓴 사람인지. 역할 표기가 없으면 (Yes24 가 생략한 경우) 글쓴 사람으로 본다."""
+    return not role or role in _AUTHOR_ROLES
 
 
 def _clean_author(name: str) -> str:
@@ -108,7 +121,6 @@ def _parse_authors(doc) -> List[str]:
 
     gd_auth 는 <a>이름</a> 뒤의 tail 텍스트에 역할이 붙는 구조다.
         <a>유발 하라리</a> 저/<a>다니엘 카사나브</a> 그림/<a>김명주</a> 역
-    쉼표로만 이어진 이름은 다음 역할 표기까지 같은 역할로 묶인다.
     """
     authors_element = _first(doc, _cls('span', 'gd_auth'))
     if authors_element is None:
@@ -120,19 +132,24 @@ def _parse_authors(doc) -> List[str]:
     if more_auth_li is not None:
         return [_clean_author(a.text_content().strip()) for a in more_auth_li.xpath('.//a')]
 
-    entries, pending = list(), list()
+    # 쉼표로만 이어진 이름은 자기 tail 에 역할이 없다. 역할 표기가 나올 때까지
+    # 모아뒀다가 한꺼번에 같은 역할로 확정한다.
+    #   <a>차유진</a>, <a>정재승</a> 글/   ->   차유진과 정재승 둘 다 '글'
+    people, unassigned = list(), list()
     for anchor in authors_element.xpath('./a'):
-        pending.append(_clean_author(anchor.text_content().strip()))
+        unassigned.append(_clean_author(anchor.text_content().strip()))
         role = _ROLE_IN_TAIL.search(anchor.tail or '')
-        if role:
-            entries += [(name, role.group(0)) for name in pending]
-            pending = list()
-    # 역할 표기가 없으면 (Yes24 가 생략한 경우) 저자로 본다
-    entries += [(name, '') for name in pending]
+        if role is None:
+            continue
+        people += [(name, role.group(0)) for name in unassigned]
+        unassigned = list()
+
+    # 끝까지 역할 표기를 못 만난 이름들
+    people += [(name, '') for name in unassigned]
 
     # 안정 정렬이라 글쓴 사람끼리도, 나머지끼리도 원래 순서가 유지된다
-    entries.sort(key=lambda entry: 0 if entry[1] in _AUTHOR_ROLES or not entry[1] else 1)
-    return [name for name, _ in entries]
+    people.sort(key=lambda person: 0 if _is_author(person[1]) else 1)
+    return [name for name, _ in people]
 
 
 # --- 나머지 필드 --------------------------------------------------------------
@@ -169,9 +186,11 @@ def _parse_rating(doc) -> Optional[int]:
     if not rating_text:
         return None
     try:
-        return max(0, min(5, round(float(rating_text) / 2)))
+        score = float(rating_text)
     except ValueError:
         return None
+    # 반올림이 아니라 내림. 9.7 -> 4.85 -> 4
+    return max(0, min(5, int(score / 2)))
 
 
 def _parse_tags(doc) -> List[str]:
@@ -238,27 +257,26 @@ class Yes24(Metadata):
         return results
 
     def _fetch_all(self, id_list: List[str]) -> List[MetaRecord]:
-        """상세 페이지를 병렬로 가져온다. 한 건이 실패해도 나머지는 살린다."""
-        parsed = list()
+        """상세 페이지를 병렬로 가져온다.
+
+        Yes24 의 관련도 순서를 유지해야 하므로 완료 순서가 아니라 요청 순서대로
+        결과를 모은다. 한 건이 실패해도 나머지는 살린다.
+        """
+        results = list()
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
-            futures = {
-                executor.submit(self._parse_search_result, goods_no): index
-                for index, goods_no in enumerate(id_list)
-            }
-            for future in concurrent.futures.as_completed(futures):
-                index = futures[future]
+            futures = [executor.submit(self._parse_search_result, goods_no)
+                       for goods_no in id_list]
+            for goods_no, future in zip(id_list, futures):
                 try:
                     result = future.result()
                 except Exception as e:
-                    log.error_or_exception(f"Unexpected error for goods {id_list[index]}: {e}")
+                    log.error_or_exception(f"Unexpected error for goods {goods_no}: {e}")
                     continue
                 if result:
-                    parsed.append((index, result))
+                    results.append(result)
+        return results
 
-        # as_completed 는 완료 순서라 Yes24 의 관련도 순서를 되돌린다
-        return [result for _, result in sorted(parsed, key=itemgetter(0))]
-
-    def _parse_search_result(self, goods_no) -> Optional[MetaRecord]:
+    def _parse_search_result(self, goods_no: str) -> Optional[MetaRecord]:
         try:
             url = f"{self.BASE_URL}/Goods/{goods_no}"
 
@@ -273,23 +291,23 @@ class Yes24(Metadata):
                 identifiers["isbn"] = isbn13
 
             return MetaRecord(
-                id = None,
-                title = _text(doc, _cls('h2', 'gd_name')),
-                authors = _parse_authors(doc),
-                source = MetaSourceInfo(
+                id=None,
+                title=_text(doc, _cls('h2', 'gd_name')),
+                authors=_parse_authors(doc),
+                source=MetaSourceInfo(
                     id=self.__id__,
                     description="Yes24",
-                    link="https://www.Yes24.com/"
+                    link="https://www.yes24.com/"
                 ),
-                url = url,
-                cover = f"https://image.yes24.com/goods/{goods_no}/XL",
-                description = _parse_description(doc),
-                publisher = _text(doc, _cls('span', 'gd_pub')),
-                publishedDate = _parse_published_date(doc),
-                rating = _parse_rating(doc),
-                tags = _parse_tags(doc),
-                identifiers = identifiers,
-                languages = ["한국어"]
+                url=url,
+                cover=f"https://image.yes24.com/goods/{goods_no}/XL",
+                description=_parse_description(doc),
+                publisher=_text(doc, _cls('span', 'gd_pub')),
+                publishedDate=_parse_published_date(doc),
+                rating=_parse_rating(doc),
+                tags=_parse_tags(doc),
+                identifiers=identifiers,
+                languages=["한국어"]
             )
 
         except requests.RequestException as e:
