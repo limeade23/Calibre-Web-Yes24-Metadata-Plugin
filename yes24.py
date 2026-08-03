@@ -50,12 +50,18 @@ class Yes24(Metadata):
                 id_list = [li['data-goods-no'] for li in soup.find_all('li', {'data-goods-no': True})]
                 
                 for goods_no in id_list:
-                    result = self._parse_search_result(goods_no)
+                    try:
+                        result = self._parse_search_result(goods_no)
+                    except Exception as e:
+                        log.error_or_exception(f"Unexpected error for goods {goods_no}: {e}")
+                        continue
                     if result:
                         results.append(result)
-                
+
             except requests.RequestException as e:
-                log.warning(f"Request failed: {e}")
+                log.warning(f"Yes24 search request failed: {e}")
+            except Exception as e:
+                log.error_or_exception(f"Yes24 search failed: {e}")
                 
         return results
 
@@ -143,5 +149,8 @@ class Yes24(Metadata):
             return match
         
         except requests.RequestException as e:
-            log.warning(f"Failed to parse search result for {goods_no}: {e}")
+            log.warning(f"Failed to fetch goods {goods_no} from yes24: {e}")
+            return None
+        except Exception as e:
+            log.error_or_exception(f"Failed to parse goods {goods_no} from yes24: {e}")
             return None
