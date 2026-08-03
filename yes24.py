@@ -211,11 +211,20 @@ def _parse_isbn13(doc) -> str:
 
 
 class Yes24(Metadata):
+    """종이책.
+
+    calibre-web 은 metadata_provider 모듈 안의 Metadata 하위 클래스를 전부
+    제공자로 등록하므로 (search_metadata.py 의 list_classes), 이 파일 하나로
+    종이책과 전자책을 각각의 제공자로 노출한다. 사용자는 책 정보 편집 화면에서
+    둘을 따로 켜고 끌 수 있다.
+    """
+
     __name__ = "Yes24"
     __id__ = "Yes24"
 
     BASE_URL = "https://www.yes24.com/Product"
-    DOMAIN = "ALL"
+    # 검색할 상품군. ALL 로 두면 음반이나 DVD 까지 섞여 들어온다.
+    DOMAIN = "BOOK"
     PAGE_SIZE = 8
 
     SEARCH_TIMEOUT = 30
@@ -296,7 +305,7 @@ class Yes24(Metadata):
                 authors=_parse_authors(doc),
                 source=MetaSourceInfo(
                     id=self.__id__,
-                    description="Yes24",
+                    description=self.__name__,
                     link="https://www.yes24.com/"
                 ),
                 url=url,
@@ -316,3 +325,16 @@ class Yes24(Metadata):
         except Exception as e:
             log.error_or_exception(f"Failed to parse goods {goods_no} from yes24: {e}")
             return None
+
+
+class Yes24Ebook(Yes24):
+    """전자책. 상세 페이지 구조가 종이책과 같아 검색 상품군만 바꾼다.
+
+    __name__ 은 체크박스의 id="show-..." 에 그대로 들어가므로 공백을 넣으면 안 된다.
+    __id__ 는 사용자별 제공자 on/off 설정의 키라 종이책 쪽 값은 그대로 두었다.
+    """
+
+    __name__ = "Yes24-eBook"
+    __id__ = "Yes24Ebook"
+
+    DOMAIN = "EBOOK"
