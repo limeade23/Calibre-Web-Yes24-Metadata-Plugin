@@ -69,6 +69,58 @@ def _fix_close_br(html: str) -> str:
         lambda m: '&lt;br&gt;' if m.group(1) == '&lt;' else '<br>', html)
 
 
+# 긴 표기를 먼저 둬야 '공저' 가 '저' 로 잘리지 않는다
+_ROLE = (r'(?:원저|편저|공저|등저|저자|지음|저|글|그림|사진|편역|번역|옮김|역자|역'
+         r'|엮음|편|감수|해설|주해|각색|기획|원작|구성)')
+_ROLE_IN_TAIL = re.compile(_ROLE)
+_ROLE_SUFFIX = re.compile(r'\s+' + _ROLE + r'\s*$')
+
+# 글쓴 사람으로 볼 역할. 아무도 빼지 않고 이 사람들을 앞으로 보내기만 한다.
+# calibre-web 은 authors 를 ' & ' 로 이어 붙인 뒤 첫 번째 사람으로 책 폴더를
+# 만들고 author_sort 를 조립하므로 (editbooks.py 의 prepare_authors,
+# handle_author_on_edit), 글쓴 사람이 맨 앞에 와야 한다.
+# 나머지(역/그림/감수/기획...)끼리는 Yes24 가 준 순서를 그대로 둔다. 우열을
+# 매길 근거가 없어서, 굳이 뒤섞으면 바뀌지 않아도 될 순서까지 바뀐다.
+_AUTHOR_ROLES = frozenset((
+    '저', '저자', '지음', '글', '공저', '등저', '원저', '편저', '엮음', '원작', '구성'))
+
+
+def _clean_author(name: str) -> str:
+    """저자명 뒤에 붙어 들어오는 역할 표기를 떼어낸다.
+
+    Yes24 는 링크 텍스트 자체에 역할이 섞인 상품이 있다 ('문현일 저', '진유림 공저').
+    """
+    return _ROLE_SUFFIX.sub('', name).strip()
+
+
+def _parse_authors(authors_element) -> List[str]:
+    """글쓴 사람이 앞에 오도록 정렬한다. 역자/감수도 버리지 않는다.
+
+    gd_auth 는 <a>이름</a> 뒤의 tail 텍스트에 역할이 붙는 구조다.
+        <a>유발 하라리</a> 저/<a>다니엘 카사나브</a> 그림/<a>김명주</a> 역
+    쉼표로만 이어진 이름은 다음 역할 표기까지 같은 역할로 묶인다.
+    """
+    # 저자가 많으면 접힌 목록에 전체가 들어있다. 다만 이 링크들은 tail 이 비어
+    # 역할을 알 수 없어 Yes24 가 준 순서를 그대로 쓴다.
+    more_auth_li = _first(authors_element, _cls('span', 'moreAuthLi'))
+    if more_auth_li is not None:
+        return [_clean_author(a.text_content().strip()) for a in more_auth_li.xpath('.//a')]
+
+    entries, pending = list(), list()
+    for anchor in authors_element.xpath('./a'):
+        pending.append(_clean_author(anchor.text_content().strip()))
+        role = _ROLE_IN_TAIL.search(anchor.tail or '')
+        if role:
+            entries += [(name, role.group(0)) for name in pending]
+            pending = list()
+    # 역할 표기가 없으면 (Yes24 가 생략한 경우) 저자로 본다
+    entries += [(name, '') for name in pending]
+
+    # 안정 정렬이라 글쓴 사람끼리도, 나머지끼리도 원래 순서가 유지된다
+    entries.sort(key=lambda entry: 0 if entry[1] in _AUTHOR_ROLES or not entry[1] else 1)
+    return [name for name, _ in entries]
+
+
 class Yes24(Metadata):
     __name__ = "Yes24"
     __id__ = "Yes24"
@@ -145,9 +197,7 @@ class Yes24(Metadata):
             authors = []
             authors_element = _first(doc, _cls('span', 'gd_auth'))
             if authors_element is not None:
-                more_auth_li = _first(authors_element, _cls('span', 'moreAuthLi'))
-                authors = [a.text_content().strip() for a in (more_auth_li.xpath('.//a')
-                        if more_auth_li is not None else authors_element.xpath('./a'))]
+                authors = _parse_authors(authors_element)
 
             publisher = _text(doc, _cls('span', 'gd_pub'))
 
